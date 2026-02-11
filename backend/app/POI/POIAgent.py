@@ -1,43 +1,51 @@
-# Before running the sample:
-#    pip install --pre azure-ai-projects>=2.0.0b1
-#    pip install azure-identity
-
 import json
+import os
 from typing import Any, Dict, Optional
 
-from azure.ai.projects import AIProjectClient
-from azure.identity import DefaultAzureCredential
+from openai import OpenAI
 
 from POI.ImageFetcher import flickr_photo_search
 from POI.POIModel import POIModel
 
-ENDPOINT = "https://edyzhang2026-travel-resource.services.ai.azure.com/api/projects/edyzhang2026-travel"
-AGENT_NAME = "POI"
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+_openai_client = OpenAI()  # reads OPENAI_API_KEY from env
 
-_project_client = AIProjectClient(
-    endpoint=ENDPOINT,
-    credential=DefaultAzureCredential(),
-)
-_openai_client = _project_client.get_openai_client()
-_agent = None
+POI_SYSTEM_PROMPT = """\
+You are a travel Points of Interest (POI) discovery assistant.
 
+Given a location or topic, return a JSON array of points of interest. Each POI object must have:
+- "name": string — the name of the place
+- "description": string — a brief description of the place
+- "geo_coordinate": {"lat": number, "lng": number} — latitude and longitude
+- "poi_type": string — one of "restaurant", "lodge", "tourist_destination", or "unknown"
+- "opening_hours": string — typical opening hours (optional but preferred)
+- "address": string — full address (optional but preferred)
+- "special_instructions": string — tips for visitors (optional but preferred)
+- "cost": string — entry cost or price range as a string (e.g. "Free", "$15", "¥2,000")
 
-def _get_agent():
-    global _agent
-    if _agent is None:
-        _agent = _project_client.agents.get(agent_name=AGENT_NAME)
-    return _agent
+Do NOT include an "images" field — images are fetched separately.
+
+Return ONLY a JSON array of POI objects. Do not wrap it in another object.
+If the user specifies a number of results, return exactly that many.
+Default to 10-15 POIs if no count is specified.
+Focus on popular, well-known, and highly-rated places.
+"""
 
 
 def _call_poi_agent(poi: str, number_of_poi: Optional[int] = None) -> str:
+    user_message = poi
     if number_of_poi is not None:
-        poi = f"{poi}, return {number_of_poi} results"
-    agent = _get_agent()
-    response = _openai_client.responses.create(
-        input=[{"role": "user", "content": poi}],
-        extra_body={"agent": {"name": agent.name, "type": "agent_reference"}},
+        user_message = f"{poi}, return {number_of_poi} results"
+    response = _openai_client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": POI_SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.7,
     )
-    output_text = getattr(response, "output_text", "")
+    output_text = response.choices[0].message.content or ""
     print(f"[POIAgent] response received: {output_text}")
     return output_text
 
@@ -106,7 +114,7 @@ def add_poi(
 
 def remove_poi(existing_poi: Any, poi_name: str) -> POIModel:
     try:
-        existing_model = POIModel.from_json(existing_poi, require_images=True)
+        existing_model = POIModel.from_json(existing_poi, require_images=True, allow_empty=True)
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
 
@@ -114,5 +122,5 @@ def remove_poi(existing_poi: Any, poi_name: str) -> POIModel:
         raise ValueError(
             "invalid_poi_name: poi_name must be a non-empty string")
 
-    filtered = [item for item in existing_model.items if item.name != poi_name]
+    filtered = [item for item in existing_model.items if item.poi.name != poi_name]
     return POIModel(filtered)

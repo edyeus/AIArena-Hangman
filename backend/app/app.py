@@ -1,14 +1,18 @@
+import json
+
 from flask import Flask, request
 from flask_cors import CORS
+from flask_sock import Sock
 
 from POI.ImageFetcher import flickr_photo_search
 from POI.POIAgent import add_poi
-from Orchestrator import analyze_intents
+from Orchestrator import analyze_intents, analyze_intents_stream
 from Planner import plan
 from Planner.RequirementModel import RequirementModel
 
 app = Flask(__name__)
 CORS(app)
+sock = Sock(app)
 
 
 @app.get("/health")
@@ -22,11 +26,47 @@ def chat() -> tuple[dict, int]:
     message = payload.get("message", "")
     if not message:
         return {"error": "message is required"}, 400
+    existing_pois = payload.get("pois")
+    existing_requirements = payload.get("requirements")
+    existing_plan = payload.get("plan")
     try:
-        intents_payload = analyze_intents(message)
+        intents_payload = analyze_intents(
+            message,
+            existing_pois=existing_pois,
+            existing_requirements=existing_requirements,
+            existing_plan=existing_plan,
+        )
     except Exception as exc:
         return {"error": "intent_request_failed", "details": str(exc)}, 502
     return intents_payload, 200
+
+
+@sock.route('/ws/chat')
+def ws_chat(ws):
+    """WebSocket endpoint for streaming chat responses."""
+    try:
+        # Receive message from client
+        data = ws.receive()
+        payload = json.loads(data)
+        message = payload.get("message", "")
+
+        if not message:
+            ws.send(json.dumps({"type": "error", "message": "message is required"}))
+            return
+
+        existing_pois = payload.get("pois")
+        existing_requirements = payload.get("requirements")
+        existing_plan = payload.get("plan")
+
+        # Call streaming version of analyze_intents
+        for update in analyze_intents_stream(message, existing_pois, existing_requirements, existing_plan):
+            ws.send(json.dumps(update))
+
+    except json.JSONDecodeError as exc:
+        ws.send(json.dumps({"type": "error", "message": f"Invalid JSON: {str(exc)}"}))
+    except Exception as exc:
+        ws.send(json.dumps({"type": "error", "message": str(exc)}))
+
 
 # curl -X POST http://127.0.0.1:5000/testpoi -H "Content-Type: application/json" -d '{"poi_name":"Seattle", "poi":{"poi":[]}}'
 

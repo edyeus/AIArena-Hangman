@@ -85,15 +85,16 @@ from POI.POIModel import SinglePOIWithCost, POIModel
 
 @dataclass
 class Transportation:
-    duration: str
-    method: str
+    duration: Optional[str] = None
+    method: Optional[str] = None
     cost: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        data: Dict[str, Any] = {
-            "duration": self.duration,
-            "method": self.method,
-        }
+        data: Dict[str, Any] = {}
+        if self.duration is not None:
+            data["duration"] = self.duration
+        if self.method is not None:
+            data["method"] = self.method
         if self.cost is not None:
             data["cost"] = self.cost
         return data
@@ -277,13 +278,11 @@ def _parse_transportation(data: Any, prefix: str) -> Transportation:
     if not isinstance(data, dict):
         raise ValueError(f"{prefix}.transportation must be an object")
 
-    duration = data.get("duration")
-    if not isinstance(duration, str) or not duration:
-        raise ValueError(f"{prefix}.transportation.duration is required")
+    duration_raw = data.get("duration")
+    duration = duration_raw if isinstance(duration_raw, str) and duration_raw else None
 
-    method = data.get("method")
-    if not isinstance(method, str) or not method:
-        raise ValueError(f"{prefix}.transportation.method is required")
+    method_raw = data.get("method")
+    method = method_raw if isinstance(method_raw, str) and method_raw else None
 
     cost: Optional[float] = None
     cost_raw = data.get("cost")
@@ -378,14 +377,6 @@ def _validate_transportation(data: Any, prefix: str) -> List[str]:
     errors: List[str] = []
     if not isinstance(data, dict):
         return [f"{prefix}.transportation must be an object"]
-
-    duration = data.get("duration")
-    if not isinstance(duration, str) or not duration:
-        errors.append(f"{prefix}.transportation.duration is required")
-
-    method = data.get("method")
-    if not isinstance(method, str) or not method:
-        errors.append(f"{prefix}.transportation.method is required")
 
     cost = data.get("cost")
     if cost is not None and not isinstance(cost, (int, float)):

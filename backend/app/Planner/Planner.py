@@ -1,21 +1,45 @@
 import json
+import os
 from typing import Optional
 
-from azure.ai.projects import AIProjectClient
-from azure.identity import DefaultAzureCredential
+from openai import OpenAI
 
 from POI.POIModel import POIModel
 from Planner.RequirementModel import RequirementModel
 from Planner.PlanOptionModel import PlanOptionModel
 
-ENDPOINT = "https://edyzhang2026-travel-resource.services.ai.azure.com/api/projects/edyzhang2026-travel"
-AGENT_NAME = "Scheduler"
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+_openai_client = OpenAI()  # reads OPENAI_API_KEY from env
 
-_project_client = AIProjectClient(
-    endpoint=ENDPOINT, credential=DefaultAzureCredential()
-)
-_openai_client = _project_client.get_openai_client()
-_agent = None
+PLANNER_SYSTEM_PROMPT = """\
+You are a travel itinerary planner. Given a list of POIs and requirements, generate detailed day-by-day itinerary options.
+
+Return a JSON object with an "options" array. Each option has:
+- "overall_cost": string — estimated total cost (e.g. "$4,200")
+- "general_notes": string — overview of this itinerary option
+- "days": array of day objects, each with:
+  - "highlight": string — the theme or highlight of this day
+  - "lodging": string — recommended accommodation (optional)
+  - "blocks": array of time block objects, each with:
+    - "time": string — time range (e.g. "9:00 AM - 11:30 AM")
+    - "description": string — what to do during this block
+    - "pois": array of POI objects (optional), each with:
+      - "name": string
+      - "description": string
+      - "geo_coordinate": {"lat": number, "lng": number}
+    - "transportation": object (optional) with:
+      - "duration": string (e.g. "20 minutes")
+      - "method": string (e.g. "subway", "walking", "taxi")
+      - "cost": number (optional, in local currency)
+
+Rules:
+- Generate 2-3 itinerary options with different styles (e.g. budget, balanced, premium).
+- Respect all requirements (budget, duration, preferences).
+- Schedule POIs logically by proximity and opening hours.
+- Include meals, rest, and travel time between locations.
+- Use the provided POIs; do not invent new ones unless needed for meals or lodging.
+- Return ONLY valid JSON matching the schema above.
+"""
 
 
 def plan(
@@ -44,17 +68,13 @@ def plan(
 
 
 def _call_planner_agent(message: str) -> str:
-    agent = _get_agent()
-    response = _openai_client.responses.create(
-        input=[{"role": "user", "content": message}],
-        extra_body={"agent": {"name": agent.name, "type": "agent_reference"}},
+    response = _openai_client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+            {"role": "user", "content": message},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.7,
     )
-    return getattr(response, "output_text", "")
-
-
-def _get_agent():
-    global _agent
-    if _agent is None:
-        _agent = _project_client.agents.get(agent_name=AGENT_NAME)
-        print(f"[Planner] Retrieved agent: {_agent.name}")
-    return _agent
+    return response.choices[0].message.content or ""

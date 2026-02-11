@@ -92,6 +92,15 @@ class RequirementModel:
 
         return cls(items)
 
+    @staticmethod
+    def remove_requirement(existing_model: "RequirementModel", description: str) -> "RequirementModel":
+        needle = description.lower()
+        filtered = [
+            item for item in existing_model.items
+            if needle not in item.description.lower()
+        ]
+        return RequirementModel(filtered)
+
     @classmethod
     def validate_json(cls, data: Any, allow_empty: bool = False) -> List[str]:
         errors: List[str] = []

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Chat Client - Trip Planner</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #output {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            min-height: 300px;
+            max-height: 500px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .update {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-left: 3px solid #007bff;
+            background: white;
+        }
+        .update.intents {
+            border-left-color: #28a745;
+        }
+        .update.pois {
+            border-left-color: #ffc107;
+        }
+        .update.requirements {
+            border-left-color: #17a2b8;
+        }
+        .update.plan {
+            border-left-color: #6f42c1;
+        }
+        .update.error {
+            border-left-color: #dc3545;
+            background: #fff5f5;
+        }
+        .update.done {
+            border-left-color: #28a745;
+            background: #f0fff4;
+        }
+        .update-type {
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Chat Client - Trip Planner</h1>
+
+    <div class="container">
+        <div class="input-group">
+            <label for="message">Your Message:</label>
+            <textarea id="message" rows="3" placeholder="e.g., plan a 3 day trip to Tokyo and Kyoto">plan a 3 day trip to Tokyo and Kyoto</textarea>
+        </div>
+
+        <button id="sendBtn" onclick="sendMessage()">Send Message</button>
+        <button onclick="clearOutput()">Clear Output</button>
+
+        <div id="status" class="status disconnected">Status: Disconnected</div>
+
+        <div class="input-group" style="margin-top: 20px;">
+            <label>Progressive Updates:</label>
+            <div id="output"></div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+
+        function setStatus(status, className) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = `Status: ${status}`;
+            statusEl.className = `status ${className}`;
+        }
+
+        function appendOutput(type, content) {
+            const output = document.getElementById('output');
+            const update = document.createElement('div');
+            update.className = `update ${type}`;
+
+            const typeLabel = document.createElement('div');
+            typeLabel.className = 'update-type';
+            typeLabel.textContent = type;
+
+            const contentDiv = document.createElement('div');
+            contentDiv.textContent = content;
+
+            update.appendChild(typeLabel);
+            update.appendChild(contentDiv);
+            output.appendChild(update);
+
+            // Auto-scroll to bottom
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+        }
+
+        function sendMessage() {
+            const message = document.getElementById('message').value.trim();
+            if (!message) {
+                alert('Please enter a message');
+                return;
+            }
+
+            clearOutput();
+            appendOutput('info', `Connecting to ws://127.0.0.1:5000/ws/chat...`);
+            setStatus('Connecting...', 'connecting');
+
+            // Create WebSocket connection
+            ws = new WebSocket('ws://127.0.0.1:5000/ws/chat');
+
+            ws.onopen = function() {
+                setStatus('Connected', 'connected');
+                appendOutput('info', `Sending: "${message}"`);
+
+                // Send the message
+                const payload = {
+                    message: message,
+                    pois: [],
+                    requirements: [],
+                    plan: []
+                };
+                ws.send(JSON.stringify(payload));
+
+                document.getElementById('sendBtn').disabled = true;
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                const type = data.type;
+
+                if (type === 'intents') {
+                    const intents = data.data || [];
+                    let content = `Received ${intents.length} intent(s):\n`;
+                    intents.forEach(intent => {
+                        content += `  - ${intent.intent}: ${intent.action} "${intent.value}"\n`;
+                    });
+                    appendOutput('intents', content);
+                }
+                else if (type === 'pois') {
+                    const pois = data.data || [];
+                    let content = `Received ${pois.length} POI(s):\n`;
+                    pois.slice(0, 5).forEach(poi => {
+                        content += `  - ${poi.name}\n`;
+                    });
+                    if (pois.length > 5) {
+                        content += `  ... and ${pois.length - 5} more\n`;
+                    }
+                    appendOutput('pois', content);
+                }
+                else if (type === 'requirements') {
+                    const reqs = data.data || [];
+                    let content = `Received ${reqs.length} requirement(s):\n`;
+                    reqs.forEach(req => {
+                        content += `  - ${req.description} [${req.priority}]\n`;
+                    });
+                    appendOutput('requirements', content);
+                }
+                else if (type === 'plan') {
+                    const plan = data.data || [];
+                    let content = `Received ${plan.length} plan option(s):\n`;
+                    plan.forEach((option, idx) => {
+                        content += `  Option ${idx + 1}: ${option.days?.length || 0} days\n`;
+                    });
+                    appendOutput('plan', content);
+                }
+                else if (type === 'done') {
+                    appendOutput('done', 'Processing complete!');
+                    ws.close();
+                }
+                else if (type === 'error') {
+                    appendOutput('error', `Error: ${data.message}`);
+                    ws.close();
+                }
+            };
+
+            ws.onerror = function(error) {
+                appendOutput('error', `WebSocket error: ${error}`);
+                setStatus('Error', 'disconnected');
+            };
+
+            ws.onclose = function() {
+                setStatus('Disconnected', 'disconnected');
+                document.getElementById('sendBtn').disabled = false;
+            };
+        }
+
+        // Allow Enter key to send (with Shift+Enter for newline)
+        document.getElementById('message').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

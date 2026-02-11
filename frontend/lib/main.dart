@@ -1,5 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'models/chat_model.dart';
+import 'models/poi_model.dart';
+import 'models/requirement_model.dart';
+import 'models/plan_model.dart';
 import 'widgets/chat_view_panel.dart';
 import 'widgets/main_view_panel.dart';
 
@@ -14,42 +20,18 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Trip Planner',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(title: 'Trip Planner'),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
 
   final String title;
 
@@ -59,6 +41,21 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   final TextEditingController _chatController = TextEditingController();
+  final List<ChatMessage> _messages = [];
+  final List<POI> _pois = [];
+  final List<Requirement> _requirements = [];
+  List<PlanOption> _planOptions = [];
+  int _selectedOptionIndex = 0;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _messages.add(ChatMessage(
+      text: 'Hi! Tell me your destination, dates, and preferences.',
+      isUser: false,
+    ));
+  }
 
   @override
   void dispose() {
@@ -66,47 +63,137 @@ class _MyHomePageState extends State<MyHomePage> {
     super.dispose();
   }
 
+  Future<void> _sendMessage(String message) async {
+    if (message.trim().isEmpty) return;
+
+    setState(() {
+      _messages.add(ChatMessage(text: message, isUser: true));
+      _isLoading = true;
+    });
+    _chatController.clear();
+
+    WebSocketChannel? channel;
+
+    try {
+      // Open WebSocket connection
+      channel = WebSocketChannel.connect(
+        Uri.parse('ws://127.0.0.1:5000/ws/chat'),
+      );
+
+      // Send the message with current state
+      channel.sink.add(jsonEncode({
+        'message': message,
+        'pois': _pois.map((p) => p.toJson()).toList(),
+        'requirements': _requirements.map((r) => r.toJson()).toList(),
+        'plan': _planOptions.map((p) => p.toJson()).toList(),
+      }));
+
+      // Listen for progressive updates
+      await for (final data in channel.stream) {
+        final messageData = jsonDecode(data as String) as Map<String, dynamic>;
+        final messageType = messageData['type'] as String?;
+
+        if (messageType == 'intents') {
+          // Extract General_Response intents for chat
+          final intents = messageData['data'] as List<dynamic>? ?? [];
+          final generalResponses = intents
+              .where((i) => (i as Map<String, dynamic>)['intent'] == 'General_Response')
+              .map((i) => (i as Map<String, dynamic>)['value'] as String?)
+              .where((text) => text != null && text.isNotEmpty)
+              .join('\n\n');
+
+          if (generalResponses.isNotEmpty) {
+            setState(() {
+              _messages.add(ChatMessage(text: generalResponses, isUser: false));
+            });
+          }
+        } else if (messageType == 'pois') {
+          // Update POIs immediately
+          final newPOIs = (messageData['data'] as List<dynamic>)
+              .map((p) => POI.fromJson(p as Map<String, dynamic>))
+              .toList();
+          setState(() {
+            _pois.clear();
+            _pois.addAll(newPOIs);
+          });
+        } else if (messageType == 'requirements') {
+          // Update requirements immediately
+          final newReqs = (messageData['data'] as List<dynamic>)
+              .map((r) => Requirement.fromJson(r as Map<String, dynamic>))
+              .toList();
+          setState(() {
+            _requirements.clear();
+            _requirements.addAll(newReqs);
+          });
+        } else if (messageType == 'plan') {
+          // Update plan options immediately
+          final newOptions = (messageData['data'] as List<dynamic>)
+              .map((p) => PlanOption.fromJson(p as Map<String, dynamic>))
+              .toList();
+          setState(() {
+            _planOptions = newOptions;
+            _selectedOptionIndex = 0;
+          });
+        } else if (messageType == 'done') {
+          // Processing complete
+          setState(() => _isLoading = false);
+          await channel.sink.close();
+          break;
+        } else if (messageType == 'error') {
+          // Error occurred
+          final errorMessage = messageData['message'] as String? ?? 'An error occurred';
+          _addErrorMessage(errorMessage);
+          setState(() => _isLoading = false);
+          await channel.sink.close();
+          break;
+        }
+      }
+    } catch (e) {
+      _addErrorMessage('Network error. Please check your connection and ensure the backend is running.');
+      setState(() => _isLoading = false);
+    } finally {
+      await channel?.sink.close();
+    }
+  }
+
+  void _addErrorMessage(String text) {
+    setState(() {
+      _messages.add(ChatMessage(text: text, isUser: false));
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final bool isWide = constraints.maxWidth >= 900;
-          final Widget mainPanel = const MainViewPanel();
-          final Widget chatPanel = ChatViewPanel(
+          final mainPanel = MainViewPanel(
+            pois: _pois,
+            requirements: _requirements,
+            planOptions: _planOptions,
+            selectedOptionIndex: _selectedOptionIndex,
+            onOptionSelected: (index) {
+              setState(() => _selectedOptionIndex = index);
+            },
+          );
+          final chatPanel = ChatViewPanel(
             controller: _chatController,
+            messages: _messages,
+            isLoading: _isLoading,
+            onSendMessage: _sendMessage,
           );
 
           if (isWide) {
             return Row(
               children: [
-                Expanded(
-                  flex: 3,
-                  child: mainPanel,
-                ),
-                Container(
-                  width: 1,
-                  color: Theme.of(context).dividerColor,
-                ),
-                Expanded(
-                  flex: 2,
-                  child: chatPanel,
-                ),
+                Expanded(flex: 3, child: mainPanel),
+                const VerticalDivider(width: 1, thickness: 1),
+                Expanded(flex: 2, child: chatPanel),
               ],
             );
           }
@@ -114,10 +201,7 @@ class _MyHomePageState extends State<MyHomePage> {
           return Column(
             children: [
               Expanded(child: mainPanel),
-              Container(
-                height: 1,
-                color: Theme.of(context).dividerColor,
-              ),
+              const Divider(height: 1, thickness: 1),
               SizedBox(
                 height: constraints.maxHeight * 0.45,
                 child: chatPanel,

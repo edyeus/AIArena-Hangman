@@ -1,7 +1,27 @@
 import 'package:flutter/material.dart';
+import '../models/poi_model.dart';
+import '../models/requirement_model.dart';
+import '../models/plan_model.dart';
+import 'poi_gallery_section.dart';
+import 'requirements_section.dart';
+import 'trip_options_section.dart';
+import 'map_section.dart';
 
 class MainViewPanel extends StatelessWidget {
-  const MainViewPanel({super.key});
+  final List<POI> pois;
+  final List<Requirement> requirements;
+  final List<PlanOption> planOptions;
+  final int selectedOptionIndex;
+  final ValueChanged<int>? onOptionSelected;
+
+  const MainViewPanel({
+    super.key,
+    required this.pois,
+    required this.requirements,
+    required this.planOptions,
+    this.selectedOptionIndex = 0,
+    this.onOptionSelected,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -22,35 +42,28 @@ class MainViewPanel extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              padding: const EdgeInsets.all(20),
+            child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Main View',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Map, timeline, and itinerary widgets go here.',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                  // POI Gallery — large section
+                  PoiGallerySection(pois: pois),
+                  const SizedBox(height: 16),
+                  // Requirements
+                  RequirementsSection(requirements: requirements),
+                  const SizedBox(height: 16),
+                  // Trip Options
+                  TripOptionsSection(
+                    planOptions: planOptions,
+                    selectedOptionIndex: selectedOptionIndex,
+                    onOptionSelected: onOptionSelected,
                   ),
                   const SizedBox(height: 16),
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Center(
-                        child: Text('Itinerary canvas'),
-                      ),
-                    ),
+                  // Map
+                  MapSection(
+                    pois: pois,
+                    planOptions: planOptions,
+                    selectedOptionIndex: selectedOptionIndex,
                   ),
                 ],
               ),
