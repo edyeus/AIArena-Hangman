@@ -55,6 +55,7 @@ def _send_to_poi_agent(
     poi: str,
     number_of_poi: Optional[int] = None,
     images_per_poi: Optional[int] = None,
+    skip_images: bool = False,
 ) -> POIModel:
     last_error = None
     for attempt in range(1, 2):
@@ -76,18 +77,19 @@ def _send_to_poi_agent(
             continue
 
         poi_model = POIModel.from_json(items, require_images=False)
-        for item in poi_model.items:
-            try:
-                images = flickr_photo_search(
-                    item.poi.name, per_page=images_per_poi or 10
-                )
-                print(f"[POIAgent] flickr images for '{item.poi.name}': {images}")
-            except Exception as exc:
-                print(f"[POIAgent] flickr error for '{item.poi.name}': {exc}")
-                item.poi.images = []
-                continue
-            urls = images.get("urls") if isinstance(images, dict) else None
-            item.poi.images = urls if isinstance(urls, list) else []
+        if not skip_images:
+            for item in poi_model.items:
+                try:
+                    images = flickr_photo_search(
+                        item.poi.name, per_page=images_per_poi or 10
+                    )
+                    print(f"[POIAgent] flickr images for '{item.poi.name}': {images}")
+                except Exception as exc:
+                    print(f"[POIAgent] flickr error for '{item.poi.name}': {exc}")
+                    item.poi.images = []
+                    continue
+                urls = images.get("urls") if isinstance(images, dict) else None
+                item.poi.images = urls if isinstance(urls, list) else []
 
         print("[POIAgent] POI data retrieving successful")
         return poi_model
@@ -101,22 +103,41 @@ def add_poi(
     poi_name: str,
     number_of_poi: Optional[int] = None,
     images_per_poi: Optional[int] = None,
+    skip_images: bool = False,
 ) -> POIModel:
     try:
         existing_model = POIModel.from_json(
-            existing_poi, require_images=True, allow_empty=True
+            existing_poi, require_images=not skip_images, allow_empty=True
         )
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
 
     new_model = _send_to_poi_agent(
-        poi_name, number_of_poi=number_of_poi, images_per_poi=images_per_poi
+        poi_name, number_of_poi=number_of_poi, images_per_poi=images_per_poi,
+        skip_images=skip_images,
     )
     if isinstance(new_model, dict):
         raise ValueError(f"poi_agent_failed: {new_model}")
 
     combined = existing_model.items + new_model.items
     return POIModel(combined)
+
+
+def fetch_poi_images_stream(poi_model: POIModel, images_per_poi: int = 10):
+    """Generator that yields (poi_name, image_urls) tuples one POI at a time."""
+    for item in poi_model.items:
+        try:
+            images = flickr_photo_search(
+                item.poi.name, per_page=images_per_poi
+            )
+            urls = images.get("urls") if isinstance(images, dict) else []
+            if not isinstance(urls, list):
+                urls = []
+            print(f"[POIAgent] streamed images for '{item.poi.name}': {len(urls)} urls")
+        except Exception as exc:
+            print(f"[POIAgent] flickr error for '{item.poi.name}': {exc}")
+            urls = []
+        yield (item.poi.name, urls)
 
 
 def remove_poi(existing_poi: Any, poi_name: str) -> POIModel:

@@ -134,6 +134,17 @@ class _MyHomePageState extends State<MyHomePage> {
             _planOptions = newOptions;
             _selectedOptionIndex = 0;
           });
+        } else if (messageType == 'poi_images') {
+          final imageData = messageData['data'] as Map<String, dynamic>;
+          final poiName = imageData['name'] as String;
+          final images = imageData['images'] as Map<String, dynamic>?;
+          final urls = (images?['urls'] as List<dynamic>?)?.cast<String>() ?? [];
+          setState(() {
+            final index = _pois.indexWhere((p) => p.name == poiName);
+            if (index != -1) {
+              _pois[index] = _pois[index].copyWith(imageUrls: urls);
+            }
+          });
         } else if (messageType == 'done') {
           // Processing complete
           setState(() => _isLoading = false);

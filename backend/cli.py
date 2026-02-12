@@ -166,6 +166,13 @@ def display_plan(data: list):
                     print(f"        {Color.GREEN}> {p.get('name', '?')}{Color.RESET}")
 
 
+def display_poi_images(data: dict):
+    name = data.get("name", "?")
+    images = data.get("images", {})
+    urls = images.get("urls", []) if isinstance(images, dict) else []
+    print(f"\n{Color.GREEN}[POI Images]{Color.RESET} {Color.BOLD}{name}{Color.RESET}: {len(urls)} image(s)")
+
+
 def display_done():
     print(f"\n{Color.GREEN}{Color.BOLD}[Done]{Color.RESET} Processing complete.\n")
 
@@ -219,6 +226,18 @@ def send_message(ws_url: str, message: str, state: ConversationState):
                 plan_data = data.get("data", [])
                 state.plan = plan_data
                 display_plan(plan_data)
+
+            elif msg_type == "poi_images":
+                img_data = data.get("data", {})
+                display_poi_images(img_data)
+                # Merge images into existing POI state
+                poi_name = img_data.get("name", "")
+                images = img_data.get("images", {})
+                urls = images.get("urls", []) if isinstance(images, dict) else []
+                for poi in state.pois:
+                    if poi.get("name") == poi_name:
+                        poi["images"] = {"urls": urls}
+                        break
 
             elif msg_type == "done":
                 display_done()

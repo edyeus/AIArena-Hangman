@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 import ollama
 
-from POI.POIAgent import add_poi, remove_poi
+from POI.POIAgent import add_poi, remove_poi, fetch_poi_images_stream
 from POI.POIModel import POIModel
 from Planner import plan
 from Planner.PlanOptionModel import PlanOptionModel
@@ -225,11 +225,12 @@ def analyze_intents_stream(
             if poi_name:
                 poi_model = remove_poi(poi_model.to_list(), poi_name)
 
-        # Step 7: Process POI adds
+        # Step 7: Process POI adds (skip images — they stream later)
+        existing_poi_names = {item.poi.name for item in poi_model.items}
         for intent in poi_add:
             poi_name = intent.get("value", "")
             if poi_name:
-                poi_model = add_poi(poi_model.to_list(), poi_name)
+                poi_model = add_poi(poi_model.to_list(), poi_name, skip_images=True)
 
         # Step 8: Yield POIs
         yield {"type": "pois", "data": poi_model.to_list()}
@@ -262,7 +263,13 @@ def analyze_intents_stream(
         # Step 12: Yield plan
         yield {"type": "plan", "data": planner_result.to_list()}
 
-        # Step 13: Yield done
+        # Step 13: Stream images for newly added POIs
+        new_pois = POIModel([item for item in poi_model.items if item.poi.name not in existing_poi_names])
+        if new_pois.items:
+            for poi_name, image_urls in fetch_poi_images_stream(new_pois):
+                yield {"type": "poi_images", "data": {"name": poi_name, "images": {"urls": image_urls}}}
+
+        # Step 14: Yield done
         yield {"type": "done"}
 
     except Exception as exc:

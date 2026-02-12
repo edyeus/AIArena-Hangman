@@ -19,18 +19,10 @@ class _PoiGallerySectionState extends State<PoiGallerySection> {
       return _buildEmptyState();
     }
 
-    // Flatten all images from all POIs
-    final allImages = <(String, POI)>[];
-    for (final poi in widget.pois) {
-      for (final url in poi.imageUrls) {
-        allImages.add((url, poi));
-      }
-    }
-
     final crossAxisCount = _getCrossAxisCount(MediaQuery.of(context).size.width);
 
-    // Calculate grid height: rows * tile size + spacing
-    final rows = (allImages.length / crossAxisCount).ceil();
+    // One tile per POI
+    final rows = (widget.pois.length / crossAxisCount).ceil();
     const tileSize = 180.0;
     final gridHeight = rows * tileSize + (rows - 1) * 8.0;
 
@@ -63,10 +55,13 @@ class _PoiGallerySectionState extends State<PoiGallerySection> {
                 mainAxisSpacing: 8,
                 childAspectRatio: 1.0,
               ),
-              itemCount: allImages.length,
+              itemCount: widget.pois.length,
               itemBuilder: (context, index) {
-                final (url, poi) = allImages[index];
-                return _buildPhotoTile(url, poi, index);
+                final poi = widget.pois[index];
+                if (poi.imageUrls.isNotEmpty) {
+                  return _buildPhotoTile(poi.imageUrls.first, poi, index);
+                }
+                return _buildPlaceholderTile(poi, index);
               },
             ),
           ),
@@ -80,6 +75,74 @@ class _PoiGallerySectionState extends State<PoiGallerySection> {
     if (width >= 900) return 4;
     if (width >= 600) return 3;
     return 2;
+  }
+
+  Widget _buildPlaceholderTile(POI poi, int index) {
+    final isHovered = _hoveredIndex == index;
+    final isTapped = _tappedIndex == index;
+    final showOverlay = isHovered || isTapped;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hoveredIndex = index),
+      onExit: (_) => setState(() => _hoveredIndex = null),
+      child: InkWell(
+        onTap: () => setState(() => _tappedIndex = isTapped ? null : index),
+        child: Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                color: Colors.grey[200],
+                width: double.infinity,
+                height: double.infinity,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(_getPoiIcon(poi.poiType), size: 32, color: Colors.grey[500]),
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        poi.name,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.grey[400],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            AnimatedOpacity(
+              opacity: showOverlay ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 200),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.all(12),
+                child: _buildOverlayContent(poi),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildPhotoTile(String url, POI poi, int index) {

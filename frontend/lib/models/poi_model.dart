@@ -37,6 +37,30 @@ class POI {
     this.cost = '',
   });
 
+  POI copyWith({
+    String? name,
+    String? description,
+    GeoCoordinate? geoCoordinate,
+    String? poiType,
+    List<String>? imageUrls,
+    String? openingHours,
+    String? address,
+    String? specialInstructions,
+    String? cost,
+  }) {
+    return POI(
+      name: name ?? this.name,
+      description: description ?? this.description,
+      geoCoordinate: geoCoordinate ?? this.geoCoordinate,
+      poiType: poiType ?? this.poiType,
+      imageUrls: imageUrls ?? this.imageUrls,
+      openingHours: openingHours ?? this.openingHours,
+      address: address ?? this.address,
+      specialInstructions: specialInstructions ?? this.specialInstructions,
+      cost: cost ?? this.cost,
+    );
+  }
+
   factory POI.fromJson(Map<String, dynamic> json) {
     final geoCoord = json['geo_coordinate'] as Map<String, dynamic>;
     final images = json['images'] as Map<String, dynamic>?;
