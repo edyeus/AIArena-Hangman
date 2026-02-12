@@ -25,8 +25,9 @@ Given a location or topic, return a JSON array of points of interest. Each POI o
 
 Do NOT include an "images" field — images are fetched separately.
 
-Return ONLY a JSON array of POI objects. Do not wrap it in another object.
+Return a JSON object with a single key "pois" containing an array of POI objects: {"pois": [...]}
 If the user specifies a number of results, return exactly that many.
+Always return at least 10 POIs unless fewer exist for the location.
 Default to 10-15 POIs if no count is specified.
 Focus on popular, well-known, and highly-rated places.
 """
@@ -64,9 +65,14 @@ def _send_to_poi_agent(
             last_error = f"agent_response_not_json: {exc}"
             continue
 
+        print(f"[POIAgent] parsed type={type(items).__name__}, keys={list(items.keys()) if isinstance(items, dict) else 'N/A'}")
+        normalized = POIModel._normalize_input(items)
+        print(f"[POIAgent] normalized={type(normalized).__name__}, len={len(normalized) if normalized else 'None'}")
+
         errors = POIModel.validate_json(items, require_images=False)
         if errors:
             last_error = "; ".join(errors)
+            print(f"[POIAgent] validation errors: {errors}")
             continue
 
         poi_model = POIModel.from_json(items, require_images=False)
@@ -77,6 +83,7 @@ def _send_to_poi_agent(
                 )
                 print(f"[POIAgent] flickr images for '{item.poi.name}': {images}")
             except Exception as exc:
+                print(f"[POIAgent] flickr error for '{item.poi.name}': {exc}")
                 item.poi.images = []
                 continue
             urls = images.get("urls") if isinstance(images, dict) else None

@@ -72,9 +72,18 @@ class POIModel:
         if isinstance(data, list):
             return data
         if isinstance(data, dict):
-            items = data.get("poi")
-            if isinstance(items, list):
-                return items
+            # Check common wrapper keys the model might use
+            for key in ("poi", "pois", "results", "points_of_interest"):
+                items = data.get(key)
+                if isinstance(items, list):
+                    return items
+            # Fallback: use the first list value found in the dict
+            for value in data.values():
+                if isinstance(value, list):
+                    return value
+            # Single POI object (has "name" key) — wrap in a list
+            if "name" in data:
+                return [data]
         return None
 
     @classmethod

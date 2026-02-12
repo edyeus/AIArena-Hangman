@@ -263,7 +263,7 @@ def _parse_block(block_data: Any, opt_idx: int, day_idx: int, block_idx: int) ->
     if pois_data is not None:
         if not isinstance(pois_data, list):
             raise ValueError(f"{prefix}.pois must be a list")
-        poi_model = POIModel.from_json(pois_data, require_images=False)
+        poi_model = POIModel.from_json(pois_data, require_images=False, allow_empty=True)
         pois = poi_model.items
 
     transportation: Optional[Transportation] = None
@@ -362,7 +362,7 @@ def _validate_block(block_data: Any, opt_idx: int, day_idx: int, block_idx: int)
             errors.append(f"{prefix}.pois must be a list")
         else:
             poi_errors = POIModel.validate_json(
-                pois_data, require_images=False)
+                pois_data, require_images=False, allow_empty=True)
             for err in poi_errors:
                 errors.append(f"{prefix}.pois: {err}")
 
